@@ -1,0 +1,3 @@
+Gene x ancestry cells (canonical denominator): 162
+Cells below min_carriers=3: 62
+Evidence gap: 38.3% of gene x ancestry cells have fewer than 3 carriers.

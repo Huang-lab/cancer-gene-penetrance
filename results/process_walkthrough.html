@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How This Analysis Works</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #5a5a5a; --accent: #7c3aed;
+    --accent-light: #f3ecfd; --border: #e2e2e2; --box-bg: #fafafa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6; max-width: 920px; margin: 0 auto; padding: 48px 24px 96px;
+  }
+  h1 { font-size: 1.7rem; margin-bottom: 4px; }
+  h2 { font-size: 1.25rem; margin-top: 44px; border-bottom: 2px solid var(--accent); padding-bottom: 6px; }
+  h3 { font-size: 1.05rem; margin-top: 24px; }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 28px; }
+  .box { background: var(--box-bg); border: 1px solid var(--border); border-radius: 8px;
+          padding: 18px 22px; margin: 16px 0; }
+  .step { display: flex; gap: 14px; margin: 14px 0; align-items: flex-start; }
+  .step .num { flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--accent);
+                color: white; display: flex; align-items: center; justify-content: center;
+                font-weight: 700; font-size: 0.85rem; }
+  .step .body { flex: 1; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 0.86rem; }
+  th, td { text-align: left; padding: 6px 9px; border-bottom: 1px solid var(--border); }
+  th { background: var(--accent-light); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  code { background: var(--box-bg); padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .small { font-size: 0.85rem; color: var(--muted); }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .formula { font-family: "Cambria Math", "STIX Two Math", Georgia, "Times New Roman", serif;
+              font-size: 1.05rem; text-align: center; margin: 14px 0; padding: 10px 0; }
+  .frac { display: inline-flex; flex-direction: column; vertical-align: middle;
+           text-align: center; margin: 0 6px; }
+  .frac .num, .frac .den { display: block; padding: 1px 8px; white-space: nowrap; }
+  .frac .num { border-bottom: 1.3px solid currentColor; }
+  .formula sub { font-size: 0.7em; }
+  .formula sup { font-size: 0.7em; }
+</style>
+</head>
+<body>
+
+<p><a href="report_acmg_vs_clinvar.html">&rarr; ACMG vs ClinVar comparison (report_acmg_vs_clinvar.html)</a></p>
+
+<h1>How This Analysis Works</h1>
+<div class="subtitle">Questions asked, data used, and the method behind every number in report.html
+and report_acmg_vs_clinvar.html</div>
+
+<h2>The two questions</h2>
+<ol>
+  <li><b>Penetrance:</b> among people who carry a likely-pathogenic variant in a cancer-predisposition
+  gene, what fraction actually develop the cancer that gene is known to cause, and at what age?</li>
+  <li><b>Concordance:</b> does relying on ClinVar to confirm a variant's pathogenicity work equally
+  well for every ancestry group, or does it systematically miss carriers in some groups more than
+  others?</li>
+</ol>
+<p>Both questions are asked of the <em>same</em> AoU carrier cohort, so the same denominator-building
+logic underlies both.</p>
+
+<h2>Data sources</h2>
+<table>
+<thead><tr><th>File</th><th>What it is</th><th>Granularity</th></tr></thead>
+<tbody>
+<tr><td><code>carriers_all_noMUTYH_ancestry.tsv</code></td>
+    <td>Every variant call in the tracked cancer-predisposition genes, per person</td>
+    <td>One row per (person, variant) &mdash; a person with 2 variants in a gene has 2 rows</td></tr>
+<tr><td><code>All_temp_cohort_simple.csv.gz</code></td>
+    <td>Cohort membership: age, sex, ancestry, and recorded disease Group</td>
+    <td>One row per (person, condition) &mdash; a person with 2 recorded conditions has 2 rows</td></tr>
+</tbody>
+</table>
+<p class="small">Both tables are multi-row-per-person by construction. Every bug found and fixed in
+this pipeline traced back to code that assumed one row per person and didn't dedupe before joining
+or counting &mdash; see the denominator method below.</p>
+
+<h2>Building the canonical carrier denominator</h2>
+<p>Every gene-level number in the report (penetrance, ancestry breakdown, evidence-gap %) is computed
+from <b>one</b> canonical carrier set per gene, built in this order:</p>
+
+<div class="step"><div class="num">1</div><div class="body">
+<b>Start from raw variant rows</b> for the gene &mdash; every (person, variant) row, including
+multiple variants per person.</div></div>
+<div class="step"><div class="num">2</div><div class="body">
+<b>Collapse to unique person &times; gene.</b> A person counts as a carrier once per gene, and as
+ACMG-PLP/ClinVar-PLP for that gene if <em>any</em> of their variants in it carries that flag.</div></div>
+<div class="step"><div class="num">3</div><div class="body">
+<b>Restrict to ACMG-PLP carriers.</b> We use ACMG (rule-based, applied uniformly regardless of
+ancestry) rather than ClinVar-PLP as the carrier definition &mdash; restricting to ClinVar-PLP would
+bake the ancestry-based confirmation gap (Finding 1) directly into the penetrance denominator.</div></div>
+<div class="step"><div class="num">4</div><div class="body">
+<b>Join to the cohort table</b> to get phenotype/age/sex, using a person-level cohort table built by
+first collapsing the cohort's multiple per-person rows into (a) one demographic row and (b) a
+<em>set</em> of every disease Group that person has ever been recorded under. Carriers with no
+matching cohort record are dropped here and reported explicitly (they have no phenotype data, so
+they cannot contribute to a penetrance calculation).</div></div>
+<div class="step"><div class="num">5</div><div class="body">
+<b>Restrict to the correct sex</b> for genes whose mapped cancer type(s) are sex-specific (e.g.
+breast/ovarian/endometrial genes are restricted to female carriers, both numerator and denominator).</div></div>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Gene</th><th>Raw rows</th><th>Unique person&times;gene</th>
+<th>ACMG-PLP only</th><th>Joined to cohort</th><th>Dropped (no cohort record)</th>
+<th>Sex restriction</th><th>Canonical N</th></tr></thead>
+<tbody><tr><td>BRCA2</td><td>2,960</td><td>2,519</td><td>1,611</td><td>1,078</td><td>533 (33.1%)</td><td>Female only</td><td>705</td></tr><tr><td>MSH6</td><td>2,057</td><td>1,823</td><td>1,271</td><td>761</td><td>510 (40.1%)</td><td>Female only</td><td>480</td></tr><tr><td>BRCA1</td><td>1,710</td><td>1,334</td><td>713</td><td>497</td><td>216 (30.3%)</td><td>Female only</td><td>320</td></tr><tr><td>TSC2</td><td>1,271</td><td>1,200</td><td>504</td><td>306</td><td>198 (39.3%)</td><td>Both sexes</td><td>306</td></tr><tr><td>PALB2</td><td>962</td><td>843</td><td>655</td><td>422</td><td>233 (35.6%)</td><td>Female only</td><td>264</td></tr><tr><td>PMS2</td><td>4,242</td><td>3,938</td><td>691</td><td>462</td><td>229 (33.1%)</td><td>Female only</td><td>263</td></tr><tr><td>TP53</td><td>494</td><td>331</td><td>243</td><td>176</td><td>67 (27.6%)</td><td>Both sexes</td><td>176</td></tr><tr><td>SDHD</td><td>271</td><td>255</td><td>224</td><td>141</td><td>83 (37.1%)</td><td>Both sexes</td><td>141</td></tr><tr><td>SMAD4</td><td>1,583</td><td>678</td><td>207</td><td>134</td><td>73 (35.3%)</td><td>Both sexes</td><td>134</td></tr><tr><td>APC</td><td>592</td><td>458</td><td>188</td><td>129</td><td>59 (31.4%)</td><td>Both sexes</td><td>129</td></tr><tr><td>VHL</td><td>561</td><td>473</td><td>144</td><td>104</td><td>40 (27.8%)</td><td>Both sexes</td><td>104</td></tr><tr><td>MSH2</td><td>534</td><td>412</td><td>238</td><td>151</td><td>87 (36.6%)</td><td>Female only</td><td>87</td></tr><tr><td>RET</td><td>303</td><td>253</td><td>117</td><td>82</td><td>35 (29.9%)</td><td>Both sexes</td><td>82</td></tr><tr><td>PTEN</td><td>649</td><td>525</td><td>208</td><td>141</td><td>67 (32.2%)</td><td>Female only</td><td>79</td></tr><tr><td>SDHB</td><td>207</td><td>182</td><td>113</td><td>73</td><td>40 (35.4%)</td><td>Both sexes</td><td>73</td></tr><tr><td>MEN1</td><td>291</td><td>263</td><td>94</td><td>68</td><td>26 (27.7%)</td><td>Both sexes</td><td>68</td></tr><tr><td>MLH1</td><td>431</td><td>347</td><td>144</td><td>104</td><td>40 (27.8%)</td><td>Female only</td><td>65</td></tr><tr><td>SDHC</td><td>130</td><td>120</td><td>93</td><td>58</td><td>35 (37.6%)</td><td>Both sexes</td><td>58</td></tr><tr><td>TMEM127</td><td>123</td><td>109</td><td>75</td><td>52</td><td>23 (30.7%)</td><td>Both sexes</td><td>52</td></tr><tr><td>MAX</td><td>120</td><td>111</td><td>66</td><td>39</td><td>27 (40.9%)</td><td>Both sexes</td><td>39</td></tr><tr><td>SDHAF2</td><td>150</td><td>139</td><td>57</td><td>33</td><td>24 (42.1%)</td><td>Both sexes</td><td>33</td></tr><tr><td>TSC1</td><td>2,342</td><td>2,176</td><td>45</td><td>32</td><td>13 (28.9%)</td><td>Both sexes</td><td>32</td></tr><tr><td>STK11</td><td>105</td><td>95</td><td>42</td><td>32</td><td>10 (23.8%)</td><td>Both sexes</td><td>32</td></tr><tr><td>RB1</td><td>263</td><td>235</td><td>32</td><td>20</td><td>12 (37.5%)</td><td>Both sexes</td><td>20</td></tr><tr><td>NF2</td><td>84</td><td>69</td><td>29</td><td>19</td><td>10 (34.5%)</td><td>Both sexes</td><td>19</td></tr><tr><td>WT1</td><td>143</td><td>124</td><td>23</td><td>16</td><td>7 (30.4%)</td><td>Both sexes</td><td>16</td></tr><tr><td>BMPR1A</td><td>34</td><td>32</td><td>23</td><td>13</td><td>10 (43.5%)</td><td>Both sexes</td><td>13</td></tr></tbody>
+</table>
+</div>
+<p class="small">Full table also written to <code>carrier_filter_log.tsv</code>. Worked example for
+BRCA1: 1,710 raw rows &rarr; 1,334
+unique carriers (any classification) &rarr; 713 ACMG-PLP carriers
+&rarr; 497 joined to cohort (dropped 216,
+30.3%) &rarr; <b>320 canonical carriers</b>
+(female-restricted). This single number now flows unchanged into every table and figure that
+mentions BRCA1.</p>
+
+<h2>Excluding genotyping artifacts</h2>
+<p>Some genes sit in or near a pseudogene / highly-homologous paralog region, where short-read
+mapping can generate spurious, ancestry-skewed carrier calls that are a sequencing artifact, not
+biology. We flag a gene if:</p>
+<ul>
+  <li>it is <b>PMS2</b> (a known PMS2/PMS2CL pseudogene mismapping problem), or</li>
+  <li>it is on a small watch-list of other pseudogene-adjacent genes (CHEK2, SMAD4) <b>and</b> one
+  non-European ancestry has more than 2&times; the European-ancestry carrier count &mdash; a pattern
+  with no plausible biological explanation.</li>
+</ul>
+<table>
+<thead><tr><th>Gene</th><th>Reason flagged</th></tr></thead>
+<tbody><tr><td>PMS2</td><td>Known PMS2/PMS2CL pseudogene mismapping artifact</td></tr></tbody>
+</table>
+<p class="small">Flagged genes are excluded from the main penetrance results and figures, and listed
+separately in <code>excluded_genes.tsv</code> and the report's "Excluded" table &mdash; never silently
+dropped.</p>
+
+<h2>Disease-specific penetrance, not "any cancer"</h2>
+<p>For each gene we use an explicit gene &rarr; cancer-type mapping (e.g. BRCA1 &rarr; Breast, Ovary)
+rather than counting <em>any</em> recorded cancer as "affected." A BRCA1 carrier with lung cancer is
+not counted as a BRCA1 penetrance event. Each mapped cancer type is reported and plotted as its own
+line &mdash; BRCA1:Breast and BRCA1:Ovary are never merged into one number. People recorded only
+under "Family history" (no personal diagnosis) are explicitly excluded from the numerator by an
+assertion in the code.</p>
+<div class="formula">
+  p&#770;<sub>gene,cancer,age</sub> &nbsp;=&nbsp;
+  <span class="frac"><span class="num">N(canonical carriers with matched cancer)</span><span class="den">N(all canonical carriers in that age band)</span></span>
+</div>
+
+<p>Every carrier rate is compared to a <b>population background rate</b>: the same disease's
+prevalence in the whole cohort (not just carriers of that gene), computed in the same age bands and
+with the same sex restriction, so the comparison is apples-to-apples.</p>
+<div class="formula">
+  r&#770;<sub>bg, disease, age</sub> &nbsp;=&nbsp;
+  <span class="frac"><span class="num">N(whole cohort with that exact disease)</span><span class="den">N(whole cohort in that age band)</span></span>
+</div>
+<p>A gene-disease-age cell is marked "significantly elevated" only when:</p>
+<div class="formula">
+  CI<sub>lower</sub>(carrier rate) &nbsp;&gt;&nbsp; CI<sub>upper</sub>(background rate)
+</div>
+<p class="small">A conservative non-overlapping-interval test. Because this cohort is a
+case/control/family-history study design rather than a random population sample, this background
+reflects the cohort's own case-mix, not a true general-population incidence rate.</p>
+
+<p>All proportions above use a 95% <b>Wilson score interval</b>, not the normal approximation
+(several cells here have small N or proportions near 0/1, where the normal approximation
+undercoverages):</p>
+<div class="formula">
+  CI &nbsp;=&nbsp;
+  <span class="frac">
+    <span class="num">p&#770; + z<sup>2</sup>/2n &nbsp;&plusmn;&nbsp; z&radic;(p&#770;(1&minus;p&#770;)/n + z<sup>2</sup>/4n<sup>2</sup>)</span>
+    <span class="den">1 + z<sup>2</sup>/n</span>
+  </span>
+</div>
+<p class="small">z = 1.96 (95% level), n = the matching denominator above. Computed via
+<code>statsmodels.stats.proportion.proportion_confint(method="wilson")</code>.</p>
+
+<h2>Concordance footnotes</h2>
+<p>The headline concordance-by-ancestry numbers are ACMG-PLP carriers who are not also ClinVar-PLP,
+by ancestry. Two footnote checks guard against over-reading a single high number:</p>
+<ul>
+  <li><b>Singleton fraction:</b> what share of discordant variant instances are carried by only one
+  person in the dataset (a rarity proxy)? A high fraction would suggest the gap is about rare, hard-to
+  -classify variants rather than a systemic curation gap.</li>
+  <li><b>Recurrent-variant share:</b> what fraction of an ancestry's discordant instances trace back
+  to its single most common variant? A high share means one variant is driving the headline number,
+  and it should be read as "this one variant's status," not broad under-curation.</li>
+</ul>
+<p class="small">Applying this check surfaced a real finding: EAS discordance
+(91%) is
+84% attributable to a
+single recurrent
+MSH6 variant,
+with a low singleton fraction &mdash; reported as a specific-variant caveat in the main report rather
+than removed, per the review that requested this check.</p>
+
+<h2>Limitations of the method itself</h2>
+<ul>
+  <li>The "ACMG-PLP" restriction still depends on the upstream ACMG classification pipeline being
+  correct; we did not re-derive ACMG criteria here.</li>
+  <li>Population background rates are computed on this same ascertained cohort (a
+  healthcare-utilizing volunteer population), not a true general-population rate.</li>
+  <li>Age bands are coarse (5 bins); a finer-grained or continuous age model would use more of the
+  data but was out of scope for this pass.</li>
+  <li>The pseudogene-artifact rule is a heuristic (PMS2 always flagged; a 2&times; EUR-ratio rule for
+  two other watch-list genes) and does not exhaustively check every gene for mapping problems.</li>
+</ul>
+
+<p><a href="report_acmg_vs_clinvar.html">&rarr; ACMG vs ClinVar comparison (report_acmg_vs_clinvar.html)</a></p>
+
+</body>
+</html>

@@ -1,0 +1,13 @@
+Gene	n_carriers_canonical	exclusion_reason
+VHL	15	< 20 canonical carriers (n=15)
+BMPR1A	4	< 20 canonical carriers (n=4)
+RB1	6	< 20 canonical carriers (n=6)
+PMS2	207	mapping artifact (Known PMS2/PMS2CL pseudogene mismapping artifact)
+NF2	2	< 20 canonical carriers (n=2)
+SDHAF2	6	< 20 canonical carriers (n=6)
+SMAD4	3	< 20 canonical carriers (n=3)
+STK11	3	< 20 canonical carriers (n=3)
+TSC1	4	< 20 canonical carriers (n=4)
+TSC2	7	< 20 canonical carriers (n=7)
+MAX	2	< 20 canonical carriers (n=2)
+WT1	6	< 20 canonical carriers (n=6)

@@ -1,0 +1,5 @@
+Gene	n_carriers_canonical	exclusion_reason
+BMPR1A	13	< 20 canonical carriers (n=13)
+NF2	19	< 20 canonical carriers (n=19)
+PMS2	263	mapping artifact (Known PMS2/PMS2CL pseudogene mismapping artifact)
+WT1	16	< 20 canonical carriers (n=16)
