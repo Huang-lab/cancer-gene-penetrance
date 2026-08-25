@@ -73,6 +73,52 @@ Full worked examples and formulas: `results/process_walkthrough.html` and
 
 ---
 
+## Results
+
+Full interactive reports with all genes: `results/report.html` and
+`results/report_acmg_vs_clinvar.html`. Three of the more convincing figures below.
+
+### Finding 1 — ClinVar under-confirms ACMG-pathogenic variants, unevenly by ancestry
+
+![ACMG/ClinVar discordance by ancestry](results/figures/concordance_by_ancestry.png)
+
+Among carriers of an ACMG-PLP (pathogenic/likely-pathogenic) variant, the fraction with **no**
+matching ClinVar-PLP confirmation for the same variant: EUR 42.5%, AFR 51.9%, AMR 53.2%, SAS
+67.8%, EAS 90.9%. Every non-European ancestry's confidence interval sits clearly above EUR's —
+this is not sampling noise. Practically: a pipeline that gates on ClinVar confirmation will
+under-ascertain real carriers far more heavily in non-European populations than in European ones.
+One caveat worth stating rather than hiding: the EAS figure is 83.5% attributable to a single
+recurrent MSH6 variant (chr2:47806842) — that specific 90.9% should be read as "this one variant's
+ClinVar status," not as evidence of broad-based EAS under-curation. The other ancestries' gaps are
+spread across many different variants, which is the more typical under-curation signature.
+
+### Finding 2 — Penetrance recovers known BRCA1 biology
+
+![BRCA1 disease-specific penetrance by age](results/figures/BRCA1.png)
+
+320 canonical ACMG-PLP BRCA1 carriers (female-restricted): 44.7% develop breast or ovarian cancer,
+rising through the 40s and 50s, and sitting above the population background rate (★) at every age
+band measured. This is the expected shape for a well-established cancer-predisposition gene, which
+is exactly why it's useful as a validation case: if the pipeline recovered BRCA1's known risk
+pattern from noise, it wouldn't be trustworthy on the other 22 less-studied genes it's also
+applied to. The 44.7% figure runs lower than clinic-ascertained BRCA1 penetrance estimates you may
+have seen elsewhere (which select for high-risk families already flagged for testing) — expected
+for an unselected, healthcare-utilizing volunteer cohort, not a red flag.
+
+### Finding 3 — What the ClinVar confirmation gap costs in actual carriers
+
+![ACMG vs ClinVar carrier counts by gene](results/figures/acmg_vs_clinvar_carriers.png)
+
+Rerunning the identical pipeline with ClinVar-PLP instead of ACMG-PLP as the carrier definition:
+the total carrier pool across genes drops from 3,790 to 2,066 — a **45.5% loss** — concentrated
+unevenly. TSC2 retains only 2.3% of its ACMG-PLP carriers (306→7); SMAD4 retains 2.2% (134→3). This
+turns Finding 1's ancestry-discordance percentages into a concrete, gene-by-gene carrier-count
+cost, and is the direct justification for using ACMG-PLP — not ClinVar-PLP — as the carrier
+definition throughout this analysis: the alternative would have discarded nearly half the usable
+carrier pool, disproportionately in exactly the genes and ancestries Finding 1 already flags.
+
+---
+
 ## Input data schema required to run
 
 The script expects two tables (edit `CARRIERS_PATH` / `COHORT_PATH` at the top of
