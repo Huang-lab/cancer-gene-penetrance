@@ -13,7 +13,8 @@ Pipeline:
      every downstream table. A carrier_filter_log.tsv records every step.
   2. Flag genes with a likely pseudogene-mapping artifact (PMS2 always;
      others if one non-EUR ancestry has >2x the EUR carrier count).
-  3. Restrict "interpretable" results to genes with >=30 canonical carriers,
+  3. Restrict "interpretable" results to genes with >=MIN_INTERPRETABLE_CARRIERS
+     canonical carriers,
      no mapping-artifact flag, and a defined gene->cancer mapping.
   4. ACMG/ClinVar concordance by ancestry, with singleton-fraction and
      top-recurrent-variant footnotes per ancestry.
@@ -23,7 +24,13 @@ Pipeline:
   6. report.html: a single self-contained report for the above.
 
 Usage:
-    python gene_penetrance.py --min_carriers 3
+    python gene_penetrance.py \
+        --carriers-path /path/to/carriers_all_noMUTYH_ancestry.tsv \
+        --cohort-path   /path/to/All_temp_cohort_simple.csv.gz
+
+Outputs land under --outdir (default: results/ beside this script) as
+tables/, figures/ and the three HTML reports, which is the layout committed
+to the repo.
 """
 
 import argparse
@@ -42,11 +49,25 @@ from statsmodels.stats.proportion import proportion_confint
 
 warnings.filterwarnings("ignore")
 
-HERE           = Path(__file__).parent
-DEMOVARIANT    = HERE.parent
-CARRIERS_PATH  = str(DEMOVARIANT / "carriers_all_noMUTYH_ancestry.tsv")
-COHORT_PATH    = str(DEMOVARIANT / "All_temp_cohort_simple.csv.gz")
-FIG_DIR        = HERE / "figures"
+HERE = Path(__file__).parent
+
+# Where the run writes. Set from the CLI in main(); the module-level values are
+# the defaults and the ones the committed results/ tree was produced under, so
+# a plain `python gene_penetrance.py` regenerates what is checked in, in place.
+#
+# These were previously `HERE / "..."` with the inputs read from `HERE.parent`,
+# left over from the script's original home in `DemoVariant/Penetrance/`. That
+# wrote every table and figure into the repo root and looked for the input data
+# one level *above* the repo, so nothing under results/ was reachable by running
+# the script -- the committed tree had been moved there by hand.
+CARRIERS_PATH = None
+COHORT_PATH   = None
+OUT_DIR       = HERE / "results"
+TABLE_DIR     = OUT_DIR / "tables"
+FIG_DIR       = OUT_DIR / "figures"
+
+DEFAULT_CARRIERS_NAME = "carriers_all_noMUTYH_ancestry.tsv"
+DEFAULT_COHORT_NAME   = "All_temp_cohort_simple.csv.gz"
 
 CONTROL_GROUPS = ["Control (age ≥ 50)", "Control (age < 50)"]
 FAMHX_GROUPS   = ["Family history (age < 50)", "Family history (age ≥ 50)"]
@@ -253,7 +274,7 @@ def build_canonical(raw: pd.DataFrame, dedup: pd.DataFrame,
             f"-> after sex restriction (female only)={r.n_carriers_canonical:,}"
         )
 
-    out_path = HERE / log_filename
+    out_path = TABLE_DIR / log_filename
     filter_log_df.to_csv(out_path, sep="\t", index=False)
     print(f"  wrote {out_path}")
 
@@ -366,7 +387,7 @@ def fix1_concordance(raw: pd.DataFrame) -> pd.DataFrame:
     footnotes = pd.DataFrame(footnote_rows)
     out = out.merge(footnotes, on="ancestry_pred", how="left")
 
-    out_path = HERE / "acmg_clinvar_concordance_by_ancestry.tsv"
+    out_path = TABLE_DIR / "acmg_clinvar_concordance_by_ancestry.tsv"
     out.to_csv(out_path, sep="\t", index=False)
     print(f"  wrote {out_path}")
 
@@ -445,7 +466,7 @@ def fix3_gene_penetrance(canonical_df: pd.DataFrame, person_groups: pd.Series,
         & out["has_gene_cancer_mapping"]
     )
     out = out.sort_values("penetrance_primary", ascending=False)
-    out_path = HERE / f"gene_penetrance{suffix}.tsv"
+    out_path = TABLE_DIR / f"gene_penetrance{suffix}.tsv"
     out.to_csv(out_path, sep="\t", index=False)
     print(f"  wrote {out_path}")
 
@@ -461,7 +482,7 @@ def fix3_gene_penetrance(canonical_df: pd.DataFrame, person_groups: pd.Series,
                             f"(n={r['n_carriers_canonical']})")
         return "; ".join(reasons)
     excl["exclusion_reason"] = excl.apply(_reason, axis=1)
-    excl_path = HERE / f"excluded_genes{suffix}.tsv"
+    excl_path = TABLE_DIR / f"excluded_genes{suffix}.tsv"
     excl[["Gene", "n_carriers_canonical", "exclusion_reason"]].to_csv(excl_path, sep="\t", index=False)
     print(f"  wrote {excl_path} ({len(excl)} genes excluded from main results)")
 
@@ -529,7 +550,7 @@ def fix3b_disease_specific_by_age(canonical_df: pd.DataFrame, person_demo: pd.Da
 
     out = pd.DataFrame(rows).merge(artifact_flags, on="Gene", how="left")
     out = out.sort_values(["Gene", "disease", "age_band"])
-    out_path = HERE / f"disease_specific_penetrance_by_age{suffix}.tsv"
+    out_path = TABLE_DIR / f"disease_specific_penetrance_by_age{suffix}.tsv"
     out.to_csv(out_path, sep="\t", index=False)
     print(f"  wrote {out_path}")
     return out
@@ -585,11 +606,11 @@ def fix4_ancestry_evidence_gap(canonical_df: pd.DataFrame, min_carriers: int,
     below = int((pivot < min_carriers).sum().sum())
     gap_pct = 100 * below / total_cells if total_cells else np.nan
 
-    out_path = HERE / "gene_by_ancestry_counts.tsv"
+    out_path = TABLE_DIR / "gene_by_ancestry_counts.tsv"
     counts.to_csv(out_path, sep="\t", index=False)
     print(f"  wrote {out_path}")
 
-    summary_path = HERE / "evidence_gap_summary.txt"
+    summary_path = TABLE_DIR / "evidence_gap_summary.txt"
     summary = (
         f"Gene x ancestry cells (canonical denominator): {total_cells}\n"
         f"Cells below min_carriers={min_carriers}: {below}\n"
@@ -937,7 +958,7 @@ reproducible by re-running that script.
 </body>
 </html>
 """
-    out_path = HERE / "report.html"
+    out_path = OUT_DIR / "report.html"
     out_path.write_text(html_doc, encoding="utf-8")
     print(f"  wrote {out_path}")
 
@@ -1182,7 +1203,7 @@ than removed, per the review that requested this check.</p>
 </body>
 </html>
 """
-    out_path = HERE / "process_walkthrough.html"
+    out_path = OUT_DIR / "process_walkthrough.html"
     out_path.write_text(html_doc, encoding="utf-8")
     print(f"  wrote {out_path}")
 
@@ -1234,7 +1255,7 @@ def build_acmg_vs_clinvar_report(gene_pen_acmg: pd.DataFrame, gene_pen_clinvar: 
     missed_pct = 100 * (1 - total_clinvar / total_acmg) if total_acmg else np.nan
 
     # "Confident" genes for FIGURES: ACMG side already meets the main report's
-    # 30-carrier bar, and ClinVar side meets a separate, lower 10-carrier bar
+    # MIN_INTERPRETABLE_CARRIERS bar, and the ClinVar side meets CLINVAR_COMPARISON_MIN
     # (this comparison is inherently about small-N genes, but a chart still
     # needs a plottable, non-noise N to be shown). Genes failing this are
     # listed in a table, not silently dropped.
@@ -1520,7 +1541,7 @@ Generated by <code>DemoVariant/Penetrance/gene_penetrance.py</code>. Underlying 
 </body>
 </html>
 """
-    out_path = HERE / "report_acmg_vs_clinvar.html"
+    out_path = OUT_DIR / "report_acmg_vs_clinvar.html"
     out_path.write_text(html_doc, encoding="utf-8")
     print(f"  wrote {out_path}")
 
@@ -1529,17 +1550,76 @@ Generated by <code>DemoVariant/Penetrance/gene_penetrance.py</code>. Underlying 
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--min_carriers", type=int, default=3)
-    args = parser.parse_args()
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Cancer-gene carrier penetrance and ACMG/ClinVar concordance.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--carriers-path", "--carriers_path", dest="carriers_path", type=Path,
+        default=HERE / DEFAULT_CARRIERS_NAME,
+        help="Carrier-level TSV, one row per person x variant. Columns: person_id, "
+             "Gene, Variant_ID, is_ACMG_PLP, is_ClinVar_PLP, ancestry_pred, "
+             "sex_at_birth, age.",
+    )
+    parser.add_argument(
+        "--cohort-path", "--cohort_path", dest="cohort_path", type=Path,
+        default=HERE / DEFAULT_COHORT_NAME,
+        help="Gzipped cohort CSV, one row per person x recorded condition. "
+             "Columns: person_id, age, sex_at_birth, Group.",
+    )
+    parser.add_argument(
+        "--outdir", type=Path, default=OUT_DIR,
+        help="Where tables/, figures/ and the HTML reports are written.",
+    )
+    parser.add_argument(
+        "--min_carriers", "--min-carriers", dest="min_carriers", type=int, default=3,
+        help="Evidence-gap threshold: gene x ancestry cells below this are counted "
+             "as too sparse to trust. Unrelated to the gene-inclusion bar "
+             "(MIN_INTERPRETABLE_CARRIERS).",
+    )
+    return parser
 
+
+def _resolve_paths(args) -> None:
+    """Point the module-level path globals at this run's inputs and outputs.
+
+    The loaders and writers read these globals rather than taking paths as
+    arguments; setting them in one place keeps that indirection to a single
+    function instead of threading a config object through twenty call sites.
+    """
+    global CARRIERS_PATH, COHORT_PATH, OUT_DIR, TABLE_DIR, FIG_DIR
+
+    for label, path in (("--carriers-path", args.carriers_path),
+                        ("--cohort-path", args.cohort_path)):
+        if not path.exists():
+            raise SystemExit(
+                f"{label}: no such file: {path}\n"
+                "No participant-level data ships with this repo -- see "
+                "'Input data schema' in README.md for what the two tables need "
+                "to contain, and pass your own with --carriers-path/--cohort-path."
+            )
+
+    CARRIERS_PATH = str(args.carriers_path)
+    COHORT_PATH   = str(args.cohort_path)
+    OUT_DIR       = args.outdir
+    TABLE_DIR     = OUT_DIR / "tables"
+    FIG_DIR       = OUT_DIR / "figures"
+
+
+def main():
+    args = build_arg_parser().parse_args()
+    _resolve_paths(args)
+
+    TABLE_DIR.mkdir(parents=True, exist_ok=True)
     FIG_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Inputs:  {CARRIERS_PATH}\n         {COHORT_PATH}")
+    print(f"Outputs: {OUT_DIR}")
 
     # Clean up the retired any-disease outputs (A4).
     for stale in ["proportion_affected_by_age_all_carriers.tsv",
                   "proportion_affected_by_age_acmg_plp_only.tsv"]:
-        p = HERE / stale
+        p = TABLE_DIR / stale
         if p.exists():
             p.unlink()
     for stale in ["affected_by_age_all_carriers.png", "affected_by_age_acmg_plp_only.png"]:
@@ -1560,14 +1640,15 @@ def main():
     disease_specific = fix3b_disease_specific_by_age(canonical_df, person_demo, person_groups, artifact_flags)
     fix4_ancestry_evidence_gap(canonical_df, args.min_carriers, artifact_flags)
 
-    excluded = pd.read_csv(HERE / "excluded_genes.tsv", sep="\t")
-    evidence_gap_text = (HERE / "evidence_gap_summary.txt").read_text().replace("\n", " ").strip()
+    excluded = pd.read_csv(TABLE_DIR / "excluded_genes.tsv", sep="\t")
+    evidence_gap_text = (TABLE_DIR / "evidence_gap_summary.txt").read_text().replace("\n", " ").strip()
 
     interpretable_genes = gene_pen.loc[gene_pen["interpretable"], "Gene"].tolist()
     print(f"\n[Report] Generating disease-specific figures for all {len(interpretable_genes)} "
           "interpretable genes (ACMG-PLP carriers only) ...")
-    gene_chart_dir = FIG_DIR / "gene_charts"
-    gene_chart_dir.mkdir(exist_ok=True)
+    # Flat in figures/, which is where the committed per-gene PNGs are.
+    gene_chart_dir = FIG_DIR
+    gene_chart_dir.mkdir(parents=True, exist_ok=True)
     gallery_figs = {}
     for gene in interpretable_genes:
         gdf = disease_specific[disease_specific["Gene"] == gene]
@@ -1576,6 +1657,18 @@ def main():
         plot_gene_disease_chart(gene, gdf, fig_path, n_carriers=n)
         gallery_figs[gene] = fig_path
 
+    # The report's two headline figures. Both are interpretable in AoU; in a
+    # cohort where either falls below the bar, say so rather than dying with a
+    # KeyError after the whole pipeline has already run.
+    missing_headline = [g for g in ("BRCA1", "BRCA2") if g not in gallery_figs]
+    if missing_headline:
+        raise SystemExit(
+            f"{', '.join(missing_headline)} did not meet the interpretable bar "
+            f"(>= {MIN_INTERPRETABLE_CARRIERS} canonical carriers, no mapping-artifact "
+            "flag, defined gene->cancer mapping), so the headline figures in "
+            "report.html cannot be built. Tables under "
+            f"{TABLE_DIR} are complete and written."
+        )
     brca1_fig = gallery_figs["BRCA1"]
     brca2_fig = gallery_figs["BRCA2"]
 
@@ -1600,13 +1693,13 @@ def main():
 
     # Per-gene disease-specific charts for ClinVar-PLP, same style as the ACMG
     # gallery, for every gene with a defined cancer mapping (not just genes
-    # meeting ClinVar's own 30-carrier bar -- the comparison report applies
+    # meeting ClinVar's own carrier bar -- the comparison report applies
     # its own, separate confidence bar when deciding what to actually show).
     genes_with_mapping = [g for g in GENE_CANCER_GROUPS if g in gene_pen_clinvar["Gene"].values]
     print(f"\n[ClinVar comparison] Generating disease-specific figures for "
           f"{len(genes_with_mapping)} genes (ClinVar-PLP carriers only) ...")
-    gene_chart_dir_clinvar = FIG_DIR / "gene_charts_clinvar"
-    gene_chart_dir_clinvar.mkdir(exist_ok=True)
+    gene_chart_dir_clinvar = FIG_DIR / "clinvar"
+    gene_chart_dir_clinvar.mkdir(parents=True, exist_ok=True)
     gallery_figs_clinvar = {}
     for gene in genes_with_mapping:
         gdf = disease_specific_clinvar[disease_specific_clinvar["Gene"] == gene]
