@@ -152,12 +152,21 @@ If your EHR + cohort tables can be mapped to this schema, the pipeline runs unch
 
 ```bash
 pip install -r requirements.txt
-python gene_penetrance.py --min_carriers 3
+python gene_penetrance.py \
+  --carriers-path /path/to/carriers_all_noMUTYH_ancestry.tsv \
+  --cohort-path   /path/to/All_temp_cohort_simple.csv.gz
 ```
 
-**Current limitation:** `CARRIERS_PATH` and `COHORT_PATH` are hardcoded constants at the top of
-the script, not CLI arguments. The `Group`-label collapsing (`CONTROL_GROUPS`, `FAMHX_GROUPS`)
-and the `GENE_CANCER_GROUPS` gene→cancer-type mapping are also hardcoded and AoU-specific.
+Everything lands under `--outdir` (default `results/`, beside the script): `tables/`,
+`figures/`, and the three HTML reports. That is the layout committed here, so a default
+run regenerates the checked-in tree in place.
+
+`--min_carriers` (default 3) is the evidence-gap threshold used only for the
+gene×ancestry sparsity table. It is not the gene-inclusion bar; that is
+`MIN_INTERPRETABLE_CARRIERS` in the script.
+
+**Current limitation:** the `Group`-label collapsing (`CONTROL_GROUPS`, `FAMHX_GROUPS`)
+and the `GENE_CANCER_GROUPS` gene→cancer-type mapping are hardcoded and AoU-specific.
 Pointing this at a different cohort today means editing those directly — see
 [Roadmap](#roadmap--extending-to-a-second-cohort) below.
 
@@ -165,7 +174,7 @@ Pointing this at a different cohort today means editing those directly — see
 
 ## Outputs
 
-Running the script regenerates everything under `results/`:
+Running the script regenerates everything under `--outdir` (default `results/`):
 - `report.html` — main results (self-contained, embedded figures)
 - `process_walkthrough.html` — methodology reference
 - `report_acmg_vs_clinvar.html` — ACMG-PLP vs ClinVar-PLP carrier-definition comparison
@@ -197,8 +206,8 @@ To run this against a second cohort (e.g. an external EHR-derived carrier table 
 Group-labeled cohort table) as a genuinely plug-and-play tool, rather than a script tied to one
 dataset:
 
-1. **Parameterize the data paths.** Turn `CARRIERS_PATH` / `COHORT_PATH` into CLI arguments
-   (`--carriers-path`, `--cohort-path`) instead of hardcoded module-level constants.
+1. ~~**Parameterize the data paths.**~~ Done: `--carriers-path`, `--cohort-path` and
+   `--outdir` are CLI arguments.
 2. **Make cohort-specific labels configurable.** `CONTROL_GROUPS`, `FAMHX_GROUPS`, and
    `GENE_CANCER_GROUPS` currently hardcode AoU's exact `Group` string values (e.g.
    `"Control (age ≥ 50)"`). Move these to a config file (YAML/JSON) per cohort.
