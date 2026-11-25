@@ -69,7 +69,7 @@ cancer mapping to appear in the main results ("interpretable"). Genes below the 
 separately with the specific reason, never silently dropped.
 
 Full worked examples and formulas: `results/process_walkthrough.html` and
-`results/transcripts/analysis_walkthrough_bilingual.md` (English/中文).
+`results/transcripts/analysis_walkthrough_bilingual.md`.
 
 ---
 
@@ -173,7 +173,7 @@ Running the script regenerates everything under `results/`:
   carrier filter logs, exclusions, ancestry breakdowns (all aggregate, no row-level data)
 - `results/figures/` — per-gene disease-specific charts, concordance bar chart, ACMG-vs-ClinVar
   comparison charts
-- `results/transcripts/` — plain-language walkthroughs of the method and findings (EN/中文)
+- `results/transcripts/` — plain-language walkthroughs of the method and findings 
 
 ---
 
